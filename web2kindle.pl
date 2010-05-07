@@ -1,7 +1,6 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Encode;
 use LWP::Simple;
 use Digest::MD5 qw(md5_hex);
 
