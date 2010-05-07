@@ -17,7 +17,6 @@ sub main {
     create_download_dir();
     my $html_file_path = download($url);
     my $mobi_file_path = convert_to_mobi($html_file_path);
-    warn $mobi_file_path;
     copy_book_to_kindle($mobi_file_path);
 }
 
