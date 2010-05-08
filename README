@@ -1,2 +1,27 @@
-How to use
-   ./kindlegen url
+This is Perl module App::kindlegen.
+
+INSTALLATION
+
+App::kindlegen installation is straightforward. If your CPAN shell is set up,
+you should just be able to do
+
+    % cpan App::kindlegen
+
+Download it, unpack it, then build it as per the usual:
+
+    % perl Makefile.PL
+    % make && make test
+
+Then install it:
+
+    % make install
+
+DOCUMENTATION
+
+App::kindlegen documentation is available as in POD. So you can do:
+
+    % perldoc App::kindlegen
+
+to read the documentation online with your favorite pager.
+
+dann

@@ -1,0 +1,12 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use FindBin::Libs;
+use App::kindlegen;
+
+my $app = App::kindlegen->new;
+$app->parse_options(@ARGV);
+$app->doit;
+
+__END__
+

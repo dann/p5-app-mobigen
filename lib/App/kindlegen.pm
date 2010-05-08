@@ -1,7 +1,4 @@
-#!/usr/bin/env perl
-use strict;
-
-package App::kindlegen::script;
+package App::kindlegen;
 use LWP::Simple ();
 use Digest::MD5 qw(md5_hex);
 use HTML::TreeBuilder;
@@ -10,6 +7,9 @@ use File::Basename;
 use URI;
 use File::Copy;
 use File::Spec;
+use File::Slurp qw(slurp);
+use Data::Section::Simple qw(get_data_section);
+use Text::MicroTemplate;
 
 our $VERSION = '0.01';
 
@@ -80,10 +80,11 @@ sub doit {
     $self->init;
     my $html           = $self->download_html( $self->{url} );
     my $html_file_path = $self->generate_kindle_html($html);
+
     my $mobi_file_path = $self->convert_to_mobi($html_file_path);
 
     # TODO Implement me!
-    # $self->generate_mobi($html_file_path, $self->{url});
+    # $self->generate_mobi( $html_file_path, $self->{url} );
 
     $self->copy_mobi_to_kindle($mobi_file_path);
     print "Congratulations! Converted a html to a mobi!\n";
@@ -101,36 +102,59 @@ sub generate_mobi {
     my ( $self, $html_file_path, $html_url ) = @_;
     my $toc_file_path = $self->generate_toc($html_url);
     my $opf_file_path
-        = $self->generate_opf( $html_file_path, $toc_file_path );
+        = $self->generate_opf( );
     $self->_generate_mobi($opf_file_path);
 }
 
 sub _generate_mobi {
     my ( $self, $opf_file_path ) = @_;
-
+    print "Converting a html to mobi ...\n";
+    system("kindlegen -gif $opf_file_path");
 }
 
 sub generate_toc {
     my ( $self, $html_url ) = @_;
-    my $toc = $self->run_hooks( generate_toc => { html_url => $html_url } );
+    my $toc_items
+        = $self->run_hooks( generate_toc => { html_url => $html_url } );
+    my $toc = {};
+    $toc->{items} = $toc_items;
+    $toc->{html}  = Digest::MD5::md5_hex($html_url) . ".html";
+    my $toc_content = $self->render_template( 'toc', { toc => $toc } );
+    my $toc_file_path = $self->toc_file_path($html_url);
+    $self->write_file( $toc_content, $toc_file_path );
+    $toc_file_path;
+}
 
-    # TODO generate TOC with Text::MicroTemplate
-    $toc;
+sub toc_file_path {
+    my ( $self, $url ) = @_;
+    my $file_path = File::Spec->catfile( $self->{download_dir},
+        Digest::MD5::md5_hex($url) . ".ncx" );
+    $file_path;
 }
 
 sub generate_opf {
-    my ( $self, $html_file_path, $toc_file_path ) = @_;
+    my $self = shift;
 
     # TODO
-    my $opf = $self->run_hooks(
-        generate_opf => {
-            html_file_path => $html_file_path,
-            toc_file_path  => $toc_file_path
+    my $book = $self->run_hooks(
+        generate_bookinfo => {
+            html_url => $self->{url},
         }
     );
+    $book ||= {};
 
-    # TODO generate opf with Text::MicroTemplate
+    my $opf_content = $self->render_template( 'opf', { book => $book } );
+    warn $opf_content;
+    my $opf_file_path = $self->opf_file_path($html_url);
+    $self->write_file( $opf_content, $opf_file_path );
+    $opf_file_path;
+}
 
+sub opf_file_path {
+    my ( $self, $url ) = @_;
+    my $file_path = File::Spec->catfile( $self->{download_dir},
+        Digest::MD5::md5_hex($url) . ".opf" );
+    $file_path;
 }
 
 sub write_file {
@@ -262,8 +286,7 @@ sub load_plugin {
 
     my @hooks;
     eval "package App::kindlegen::plugin::$package;\n"
-        . "use strict;\n$dsl\n"
-        . "\n"
+        . "use strict;\n$dsl\n" . "\n"
         . "sub hook { push \@hooks, [\@_] };\n$code";
 
     if ($@) {
@@ -328,12 +351,107 @@ sub parse_options {
     die 'usage: kindlegen url' unless $self->{url};
 }
 
-package main;
+sub render_template {
+    my ( $self, $name, $args ) = @_;
+    $args ||= {};
+    my $code        = $self->code($name);
+    my $args_string = $self->args_string($args);
 
-unless (caller) {
-    my $app = App::kindlegen::script->new;
-    $app->parse_options(@ARGV);
-    $app->doit;
+    local $@;
+    my $renderer = eval << "..." or die $@;    ## no critic
+sub {
+    my \$args = shift; $args_string;
+    $code->();
+};
+...
+
+    $renderer->($args);
 }
 
-__END__
+sub args_string {
+    my ( $self, $args ) = @_;
+    my $args_string = '';
+    for my $key ( keys %{ $args || {} } ) {
+        unless ( $key =~ /^[a-zA-Z_][a-zA-Z0-9_]*$/ ) {
+            die qq{Invalid template args key name: "$key"};
+        }
+        if ( ref( $args->{$key} ) eq 'CODE' ) {
+            $args_string .= qq{my \$$key = \$args->{$key}->();\n};
+        }
+        else {
+            $args_string .= qq{my \$$key = \$args->{$key};\n};
+        }
+    }
+    $args_string;
+}
+
+sub template {
+    my $name     = shift;
+    my $template = get_data_section($name);
+    local $@;
+    eval { $template = slurp($name) unless $template; };
+    chomp $template if $template;
+    return $template;
+}
+
+sub code {
+    my ( $self, $name ) = @_;
+    my $template = template($name) or return;
+    my $mt = Text::MicroTemplate->new( template => $template );
+    my $code = $mt->code;
+    return $code;
+}
+
+1;
+
+__DATA__
+
+@@ opf
+<\?xml version="1.0" encoding="utf-8"\?>
+<package unique-identifier="uid">
+  <metadata>
+    <dc-metadata xmlns:dc="http://purl.org/metadata/dublin_core"
+    xmlns:oebpackage="http://openebook.org/namespaces/oeb-package/1.0/">
+
+      <dc:Title><?= $book->{title} ?></dc:Title>
+      <dc:Language><?= $book->{language} ?></dc:Language>
+      <dc:Creator><?= $book->{creator} ?></dc:Creator>
+      <dc:Description><?= $book->{description} ?></dc:Description>
+      <dc:Date><?= $book->{date} ?></dc:Date>
+    </dc-metadata>
+    <x-metadata>
+      <output encoding="utf-8" content-type="text/x-oeb1-document">
+      </output>
+    </x-metadata>
+  </metadata>
+  <manifest>
+    <item id="item1" media-type="text/x-oeb1-document" href="<?= $book->{html} ?>"></item>
+    <item id="toc" media-type="application/x-dtbncx+xml" href="<?= $book->{ncx} ?>"></item>
+  </manifest>
+  <spine toc="toc">
+    <itemref idref="item1" />
+  </spine>
+  <tours></tours>
+  <guide>
+    <reference type="toc" title="Table of Contents" href="<?= $book->{html} ?>%23<?= $book->{toc} ?>"></reference>
+    <reference type="start" title="Startup Page" href="<?= $book->{html} ?>%23<?= $book->{start_page} ?>"></reference>
+  </guide>
+</package>
+
+@@ toc
+<\?xml version="1.0" encoding="UTF-8"\?>
+<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
+
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <docTitle>
+    <text>BOOK</text>
+  </docTitle>
+  <navMap>
+? for my $item (@{$toc->{items}}) {
+    <navPoint id="navPoint-1" playOrder="1">
+      <navLabel><text><?= $item->{text} ?></text></navLabel><content src="<?= $toc->{html} ?><?= $item->{anchor}?>"/>
+    </navPoint>
+? }
+  </navMap>
+</ncx>
+
