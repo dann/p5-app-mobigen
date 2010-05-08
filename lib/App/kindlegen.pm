@@ -81,9 +81,9 @@ sub doit {
     my $html           = $self->download_html( $self->{url} );
     my $html_file_path = $self->generate_kindle_html($html);
 
-    # FIXME Implement me!
-    my $mobi_file_path = $self->generate_mobi( $html_file_path, $self->{url} );
-    
+    my $mobi_file_path
+        = $self->generate_mobi( $html_file_path, $self->{url} );
+
     $self->copy_mobi_to_kindle($mobi_file_path);
     print "Congratulations! Converted a html to a mobi!\n";
 }
@@ -99,19 +99,19 @@ sub generate_kindle_html {
 sub generate_mobi {
     my ( $self, $html_file_path, $html_url ) = @_;
     my $toc_file_path = $self->generate_toc($html_url);
-    my $opf_file_path
-        = $self->generate_opf( );
-        
+    my $opf_file_path = $self->generate_opf();
+
     $self->_generate_mobi($opf_file_path);
 }
 
 sub _generate_mobi {
     my ( $self, $opf_file_path ) = @_;
     print "Converting a html to mobi ...\n";
-    my $mobi_file_name = Digest::MD5::md5_hex($self->{url}) . ".mobi";
+    my $mobi_file_name = Digest::MD5::md5_hex( $self->{url} ) . ".mobi";
     system("kindlegen -gif $opf_file_path -o $mobi_file_name");
 
-    my $mobi_file_path = File::Spec->catfile($self->{download_dir}, $mobi_file_name);
+    my $mobi_file_path
+        = File::Spec->catfile( $self->{download_dir}, $mobi_file_name );
     $mobi_file_path;
 }
 
@@ -138,32 +138,29 @@ sub toc_file_path {
 sub generate_opf {
     my $self = shift;
 
-    # TODO
+    # TODO Implement me!
     my $book = $self->run_hooks(
-        generate_bookinfo => {
-            html_url => $self->{url},
-        }
-    );
+        generate_bookinfo => { html_url => $self->{url}, } );
 
     # FIXME
-    $book ||= {};
-    $book->{title} ||= $self->{url};
-    $book->{language} ||= 'en-us';
-    $book->{date} ||= '2010';
-    $book->{creator} ||= 'dann';
+    $book                ||= {};
+    $book->{title}       ||= $self->{url};
+    $book->{language}    ||= 'en-us';
+    $book->{date}        ||= '2010';
+    $book->{creator}     ||= 'dann';
     $book->{description} ||= 'description';
-    $book->{html}  ||= Digest::MD5::md5_hex($self->{url}) . ".html";
-    $book->{ncx} ||= Digest::MD5::md5_hex($self->{url}) . ".ncx";
-    $book->{toc} ||= 'TOC';
+    $book->{toc}         ||= 'TOC';
+    $book->{html}        = Digest::MD5::md5_hex( $self->{url} ) . ".html";
+    $book->{ncx}         = Digest::MD5::md5_hex( $self->{url} ) . ".ncx";
+
     # FIXME
     $book->{start_page} ||= 'Introduction';
-
 
     my $opf_content = $self->render_template( 'opf', { book => $book } );
     warn $opf_content;
     my $opf_file_path = $self->opf_file_path($html_url);
     $self->write_file( $opf_content, $opf_file_path );
-    
+
     $opf_file_path;
 }
 
