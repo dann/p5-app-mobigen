@@ -1,5 +1,5 @@
-name 'w3c';
-description 'w3c specs toc';
+name 'websocket api';
+description 'websocket api';
 author 'dann';
 
 use Web::Scraper;
@@ -8,7 +8,7 @@ use URI;
 hook generate_toc => 0, sub {
     my $args = shift;
     my $target_url =  $args->{html_url};
-    return unless $target_url =~ /www.w3.org\/TR\//;
+    return [] unless $target_url =~ /www\.w3\.org\/TR\/REC-rdf-syntax/;
     
     my $scraper = scraper {
         process 'a', 'tocitems[]' => '@href';
@@ -21,6 +21,7 @@ hook generate_toc => 0, sub {
         my $toc_anchor = $item->as_string;
         if($toc_anchor =~ m/(#section-)(.*$)/) { 
             my $toc_item ={};
+            warn $2;
             $toc_item->{text} = $2;
             $toc_item->{anchor} = $1 . $2;
             push @toc, $toc_item;
@@ -28,6 +29,15 @@ hook generate_toc => 0, sub {
     }
 
     return \@toc;
+};
+
+hook generate_bookinfo => 0, sub {
+    my $args = shift;
+    my $target_url =  $args->{html_url};
+    return {} unless $target_url =~ /www\.w3\.org\/TR\/REC-rdf-syntax/;
+
+    my $book = {};
+    return $book;
 };
 
 

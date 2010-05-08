@@ -117,15 +117,31 @@ sub _generate_mobi {
 
 sub generate_toc {
     my ( $self, $html_url ) = @_;
+    print "Generating TOC ...\n";
     my $toc_items
         = $self->run_hooks( generate_toc => { html_url => $html_url } );
     my $toc = {};
-    $toc->{items} = $toc_items;
+    my $new_toc_items = $self->numbering_toc_items($toc_items);
+    $toc->{items} = $new_toc_items;
     $toc->{html}  = Digest::MD5::md5_hex($html_url) . ".html";
     my $toc_content = $self->render_template( 'toc', { toc => $toc } );
+
     my $toc_file_path = $self->toc_file_path($html_url);
     $self->write_file( $toc_content, $toc_file_path );
     $toc_file_path;
+}
+
+sub numbering_toc_items {
+    my ($self, $toc_items) = @_;
+    die 'toc_items is required' unless $toc_items;
+    my @new_toc_items =();
+    my $counter = 1;
+    foreach my $item (@{$toc_items||[]}) {
+        $item->{num} = $counter;
+        $counter++;
+        push @new_toc_items, $item;
+    }
+    return \@new_toc_items;
 }
 
 sub toc_file_path {
@@ -137,6 +153,7 @@ sub toc_file_path {
 
 sub generate_opf {
     my $self = shift;
+    print "Generating OPF ...\n";
 
     # TODO Implement me!
     my $book = $self->run_hooks(
@@ -149,15 +166,13 @@ sub generate_opf {
     $book->{date}        ||= '2010';
     $book->{creator}     ||= 'dann';
     $book->{description} ||= 'description';
-    $book->{toc}         ||= 'TOC';
-    $book->{html}        = Digest::MD5::md5_hex( $self->{url} ) . ".html";
-    $book->{ncx}         = Digest::MD5::md5_hex( $self->{url} ) . ".ncx";
+    $book->{toc}         ||= 'toc';
+    $book->{start_page}  ||= 'Introduction';
 
-    # FIXME
-    $book->{start_page} ||= 'Introduction';
+    $book->{html} = Digest::MD5::md5_hex( $self->{url} ) . ".html";
+    $book->{ncx}  = Digest::MD5::md5_hex( $self->{url} ) . ".ncx";
 
     my $opf_content = $self->render_template( 'opf', { book => $book } );
-    warn $opf_content;
     my $opf_file_path = $self->opf_file_path($html_url);
     $self->write_file( $opf_content, $opf_file_path );
 
@@ -238,15 +253,15 @@ sub download_image {
 
 sub get_images_and_fix_image_tags {
     my ( $self, $html, $html_url ) = @_;
-    my $tree  = HTML::TreeBuilder->new_from_content($html);
-    my @imges = $tree->find("img");
+    my $root  = HTML::TreeBuilder->new_from_content($html);
+    my @imges = $root->find("img");
     foreach my $img (@imges) {
         my $image_url       = URI->new_abs( $img->attr('src'), $html_url );
         my $image_file_path = $self->download_image($image_url);
         my $image_file_name = $self->image_file_name($image_url);
         $img->attr( "src", $image_file_name );
     }
-    $tree->as_HTML;
+    $root->as_HTML;
 }
 
 sub load_plugins {
@@ -453,9 +468,9 @@ __DATA__
     <text>BOOK</text>
   </docTitle>
   <navMap>
-? for my $item (@{$toc->{items}}) {
-    <navPoint id="navPoint-1" playOrder="1">
-      <navLabel><text><?= $item->{text} ?></text></navLabel><content src="<?= $toc->{html} ?><?= $item->{anchor}?>"/>
+? for my $item (@{$toc->{items}|| []}) {
+    <navPoint id="navPoint-<?= $item->{num} ?>" playOrder="<?= $item->{num} ?>">
+      <navLabel><text><?= $item->{text} ?></text></navLabel><content src="<?= $toc->{html} ?><?= $item->{anchor} ?>"/>
     </navPoint>
 ? }
   </navMap>
