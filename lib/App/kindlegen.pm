@@ -81,11 +81,9 @@ sub doit {
     my $html           = $self->download_html( $self->{url} );
     my $html_file_path = $self->generate_kindle_html($html);
 
-    my $mobi_file_path = $self->convert_to_mobi($html_file_path);
-
-    # TODO Implement me!
-    # $self->generate_mobi( $html_file_path, $self->{url} );
-
+    # FIXME Implement me!
+    my $mobi_file_path = $self->generate_mobi( $html_file_path, $self->{url} );
+    
     $self->copy_mobi_to_kindle($mobi_file_path);
     print "Congratulations! Converted a html to a mobi!\n";
 }
@@ -103,13 +101,18 @@ sub generate_mobi {
     my $toc_file_path = $self->generate_toc($html_url);
     my $opf_file_path
         = $self->generate_opf( );
+        
     $self->_generate_mobi($opf_file_path);
 }
 
 sub _generate_mobi {
     my ( $self, $opf_file_path ) = @_;
     print "Converting a html to mobi ...\n";
-    system("kindlegen -gif $opf_file_path");
+    my $mobi_file_name = Digest::MD5::md5_hex($self->{url}) . ".mobi";
+    system("kindlegen -gif $opf_file_path -o $mobi_file_name");
+
+    my $mobi_file_path = File::Spec->catfile($self->{download_dir}, $mobi_file_name);
+    $mobi_file_path;
 }
 
 sub generate_toc {
@@ -141,12 +144,26 @@ sub generate_opf {
             html_url => $self->{url},
         }
     );
+
+    # FIXME
     $book ||= {};
+    $book->{title} ||= $self->{url};
+    $book->{language} ||= 'en-us';
+    $book->{date} ||= '2010';
+    $book->{creator} ||= 'dann';
+    $book->{description} ||= 'description';
+    $book->{html}  ||= Digest::MD5::md5_hex($self->{url}) . ".html";
+    $book->{ncx} ||= Digest::MD5::md5_hex($self->{url}) . ".ncx";
+    $book->{toc} ||= 'TOC';
+    # FIXME
+    $book->{start_page} ||= 'Introduction';
+
 
     my $opf_content = $self->render_template( 'opf', { book => $book } );
     warn $opf_content;
     my $opf_file_path = $self->opf_file_path($html_url);
     $self->write_file( $opf_content, $opf_file_path );
+    
     $opf_file_path;
 }
 
@@ -184,14 +201,6 @@ sub download_html {
     print "Downloading HTML ... $url\n";
     my $html = LWP::Simple::get($url);
     $html;
-}
-
-sub convert_to_mobi {
-    my ( $self, $html_file_path ) = @_;
-    print "Converting a html to mobi ...\n";
-    system("kindlegen -gif $html_file_path");
-    $html_file_path =~ s/\.html/\.mobi/;
-    $html_file_path;
 }
 
 sub copy_mobi_to_kindle {
@@ -407,7 +416,7 @@ sub code {
 __DATA__
 
 @@ opf
-<\?xml version="1.0" encoding="utf-8"\?>
+?= Text::MicroTemplate::encoded_string('<?xml version="1.0" encoding="UTF-8"?>')
 <package unique-identifier="uid">
   <metadata>
     <dc-metadata xmlns:dc="http://purl.org/metadata/dublin_core"
@@ -439,7 +448,7 @@ __DATA__
 </package>
 
 @@ toc
-<\?xml version="1.0" encoding="UTF-8"\?>
+?= Text::MicroTemplate::encoded_string('<?xml version="1.0" encoding="UTF-8"?>')
 <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
 
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
