@@ -1,0 +1,339 @@
+#!/usr/bin/env perl
+use strict;
+
+package App::kindlegen::script;
+use LWP::Simple ();
+use Digest::MD5 qw(md5_hex);
+use HTML::TreeBuilder;
+use IO::File;
+use File::Basename;
+use URI;
+use File::Copy;
+use File::Spec;
+
+our $VERSION = '0.01';
+
+sub new {
+    my $class = shift;
+
+    bless {
+        home    => File::Spec->catfile( $ENV{HOME}, ".kindlegen" ),
+        verbose => undef,
+        quiet   => undef,
+        log     => undef,
+        mirrors => [],
+        perl    => $^X,
+        argv    => [],
+        hooks   => {},
+        plugins => [],
+        download_dir =>
+            File::Spec->catfile( $ENV{HOME}, ".kindlegen", "book" ),
+        documents_dir =>
+            File::Spec->catfile( '/', 'Volumes', 'Kindle', 'documents' ),
+        @_,
+    }, $class;
+}
+
+sub init {
+    my $self = shift;
+    $self->setup_home;
+    $self->create_ebook_dir;
+    $self->load_plugins;
+}
+
+sub setup_home {
+    my $self = shift;
+
+    mkdir $self->{home}, 0777 unless -e $self->{home};
+
+    for my $dir (qw( plugins work )) {
+        my $sub = File::Spec->catfile( $self->{home}, $dir );
+        unless ( -e $sub ) {
+            mkdir $sub, 0777 or die "$dir: $!";
+        }
+    }
+
+    $self->{base}
+        = File::Spec->catfile( $self->{home}, "work", time . ".$$" );
+    mkdir $self->{base}, 0777 or die "$self->{base}: $!";
+
+    $self->{log} = File::Spec->catfile( $self->{home}, "kindlegen.log" );
+
+    {
+        my $log  = $self->{log};
+        my $base = $self->{base};
+        $self->{at_exit} = sub {
+            File::Copy::copy( $log,
+                File::Spec->catfile( $base, 'kindlegen.log' ) );
+        };
+    }
+
+    open my $out, ">$self->{log}" or die "$self->{log}: $!";
+    print $out "kindlegen (App::kindlegen) $VERSION on perl $]\n";
+    print $out "Work directory is $self->{base}\n";
+
+    $self->{plugin_dir} = File::Spec->catfile( $self->{home}, "plugins" );
+}
+
+sub doit {
+    my $self = shift;
+    $self->init;
+    my $html           = $self->download_html( $self->{url} );
+    my $html_file_path = $self->generate_kindle_html($html);
+    my $mobi_file_path = $self->convert_to_mobi($html_file_path);
+
+    # TODO Implement me!
+    # $self->generate_mobi($html_file_path, $self->{url});
+
+    $self->copy_mobi_to_kindle($mobi_file_path);
+    print "Congratulations! Converted a html to a mobi!\n";
+}
+
+sub generate_kindle_html {
+    my ( $self, $html ) = @_;
+    my $fixed_html = $self->fix_html( $html, $self->{url} );
+    my $html_file_path = $self->html_file_path( $self->{url} );
+    $self->write_file( $fixed_html, $html_file_path );
+    $html_file_path;
+}
+
+sub generate_mobi {
+    my ( $self, $html_file_path, $html_url ) = @_;
+    my $toc_file_path = $self->generate_toc($html_url);
+    my $opf_file_path
+        = $self->generate_opf( $html_file_path, $toc_file_path );
+    $self->_generate_mobi($opf_file_path);
+}
+
+sub _generate_mobi {
+    my ( $self, $opf_file_path ) = @_;
+
+}
+
+sub generate_toc {
+    my ( $self, $html_url ) = @_;
+    my $toc = $self->run_hooks( generate_toc => { html_url => $html_url } );
+
+    # TODO generate TOC with Text::MicroTemplate
+    $toc;
+}
+
+sub generate_opf {
+    my ( $self, $html_file_path, $toc_file_path ) = @_;
+
+    # TODO
+    my $opf = $self->run_hooks(
+        generate_opf => {
+            html_file_path => $html_file_path,
+            toc_file_path  => $toc_file_path
+        }
+    );
+
+    # TODO generate opf with Text::MicroTemplate
+
+}
+
+sub write_file {
+    my ( $self, $content, $file_path ) = @_;
+    my $io = IO::File->new( $file_path, 'w' );
+    $io->print($content);
+    $io->close;
+}
+
+sub create_ebook_dir {
+    my $self = shift;
+    if ( !-e $self->{download_dir} ) {
+        mkdir $self->{download_dir}
+            or die "cannot create $self->{download_dir} $!";
+    }
+}
+
+sub html_file_path {
+    my ( $self, $url ) = @_;
+    my $html_file_path = File::Spec->catfile( $self->{download_dir},
+        Digest::MD5::md5_hex($url) . ".html" );
+    $html_file_path;
+}
+
+sub download_html {
+    my ( $self, $url ) = @_;
+    print "Downloading HTML ... $url\n";
+    my $html = LWP::Simple::get($url);
+    $html;
+}
+
+sub convert_to_mobi {
+    my ( $self, $html_file_path ) = @_;
+    print "Converting a html to mobi ...\n";
+    system("kindlegen -gif $html_file_path");
+    $html_file_path =~ s/\.html/\.mobi/;
+    $html_file_path;
+}
+
+sub copy_mobi_to_kindle {
+    my ( $self, $book_file_path ) = @_;
+    if ( -d $self->{documents_dir} ) {
+        print "Copying mobi to Kindle ...\n";
+        system("cp $book_file_path $self->{documents_dir}");
+    }
+}
+
+sub fix_html {
+    my ( $self, $html, $html_url ) = @_;
+    $self->get_images_and_fix_image_tags( $html, $html_url );
+}
+
+sub image_file_path {
+    my ( $self, $url ) = @_;
+    my $image_file_name = $self->image_file_name($url);
+    my $image_file_path
+        = File::Spec->catfile( $self->{download_dir}, $image_file_name );
+    $image_file_path;
+}
+
+sub image_file_name {
+    my ( $self, $url ) = @_;
+    my ( undef, undef, $ext ) = fileparse( $url, qr"\..*" );
+    my $image_file_name = Digest::MD5::md5_hex($url) . $ext;
+    $image_file_name;
+}
+
+sub download_image {
+    my ( $self, $url ) = @_;
+    print "Downloading image ... $url\n";
+    my $image_file_path = $self->image_file_path($url);
+    my $status = LWP::Simple::mirror( $url, $image_file_path );
+    $image_file_path;
+}
+
+sub get_images_and_fix_image_tags {
+    my ( $self, $html, $html_url ) = @_;
+    my $tree  = HTML::TreeBuilder->new_from_content($html);
+    my @imges = $tree->find("img");
+    foreach my $img (@imges) {
+        my $image_url       = URI->new_abs( $img->attr('src'), $html_url );
+        my $image_file_path = $self->download_image($image_url);
+        my $image_file_name = $self->image_file_name($image_url);
+        $img->attr( "src", $image_file_name );
+    }
+    $tree->as_HTML;
+}
+
+sub load_plugins {
+    my $self = shift;
+
+    $self->_load_plugins;
+
+    for my $hook ( keys %{ $self->{hooks} } ) {
+        $self->{hooks}->{$hook}
+            = [ sort { $a->[0] <=> $b->[0] } @{ $self->{hooks}->{$hook} } ];
+    }
+
+    $self->run_hooks( init => {} );
+}
+
+sub _load_plugins {
+    my $self = shift;
+    return if $self->{disable_plugins};
+    return unless $self->{plugin_dir} && -e $self->{plugin_dir};
+
+    opendir my $dh, $self->{plugin_dir} or return;
+    my @plugins;
+    while ( my $e = readdir $dh ) {
+        my $f = File::Spec->catfile( $self->{plugin_dir}, $e );
+        next unless -f $f && $e =~ /^[A-Za-z0-9_]+$/ && $e ne 'README';
+        push @plugins, [ $f, $e ];
+    }
+
+    for my $plugin ( sort { $a->[1] <=> $b->[1] } @plugins ) {
+        $self->load_plugin(@$plugin);
+    }
+}
+
+sub load_plugin {
+    my ( $self, $file, $name ) = @_;
+
+    my $plugin = { name => $name, file => $file };
+    my @attr   = qw( name description author version synopsis );
+    my $dsl    = join "\n", map "sub $_ { \$plugin->{$_} = shift }", @attr;
+
+    ( my $package = $file ) =~ s/[^a-zA-Z0-9_]/_/g;
+    my $code = do { open my $io, "<$file"; local $/; <$io> };
+
+    my @hooks;
+    eval "package App::kindlegen::plugin::$package;\n"
+        . "use strict;\n$dsl\n"
+        . "\n"
+        . "sub hook { push \@hooks, [\@_] };\n$code";
+
+    if ($@) {
+        $self->diag(
+            "! Loading $name plugin failed. See $self->{log} for details.\n");
+        $self->chat($@);
+        return;
+    }
+
+    for my $hook (@hooks) {
+        $self->hook( $plugin->{name}, @$hook );
+    }
+
+    push @{ $self->{plugins} }, $plugin;
+}
+
+sub hook {
+    my $cb = pop;
+    my ( $self, $name, $hook, $order ) = @_;
+    $order = 50 unless defined $order;
+    push @{ $self->{hooks}->{$hook} }, [ $order, $cb, $name ];
+}
+
+sub run_hook {
+    my ( $self, $hook, $args ) = @_;
+    $self->run_hooks( $hook, $args, 1 );
+}
+
+sub run_hooks {
+    my ( $self, $hook, $args, $first ) = @_;
+    $args->{app} = $self;
+    my $res;
+    for my $plugin ( @{ $self->{hooks}->{$hook} || [] } ) {
+        $res = eval { $plugin->[1]->($args) };
+        $self->chat("Running hook '$plugin->[2]' error: $@") if $@;
+        last if $res && $first;
+    }
+    return $res;
+}
+
+sub diag {
+    my $self = shift;
+    print STDERR @_ if $self->{verbose} or !$self->{quiet};
+    $self->log(@_);
+}
+
+sub chat {
+    my $self = shift;
+    print STDERR @_ if $self->{verbose};
+    $self->log(@_);
+}
+
+sub log {
+    my $self = shift;
+    open my $out, ">>$self->{log}";
+    print $out @_;
+}
+
+sub parse_options {
+    my $self = shift;
+    $self->{url} = $ARGV[0];
+    die 'usage: kindlegen url' unless $self->{url};
+}
+
+package main;
+
+unless (caller) {
+    my $app = App::kindlegen::script->new;
+    $app->parse_options(@ARGV);
+    $app->doit;
+}
+
+__END__

@@ -1,0 +1,33 @@
+name 'w3c';
+description 'w3c specs toc';
+author 'dann';
+
+use Web::Scraper;
+use URI;
+
+hook generate_toc => 0, sub {
+    my $args = shift;
+    my $target_url =  $args->{html_url};
+    return unless $target_url =~ /www.w3.org\/TR\//;
+    
+    my $scraper = scraper {
+        process 'a', 'tocitems[]' => '@href';
+    };
+    my $uri = new URI($args->{html_url});
+    my $res = $scraper->scrape($uri);
+    my $toc_items = $res->{tocitems};
+    my @toc = ();
+    for my $item (@{$toc_items}) {
+        my $toc_anchor = $item->as_string;
+        if($toc_anchor =~ m/(#section-)(.*$)/) { 
+            my $toc_item ={};
+            $toc_item->{text} = $2;
+            $toc_item->{anchor} = $1 . $2;
+            push @toc, $toc_item;
+        }
+    }
+
+    return \@toc;
+};
+
+
