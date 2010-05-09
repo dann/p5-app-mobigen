@@ -120,8 +120,9 @@ sub generate_toc {
     print "Generating TOC ...\n";
     my $toc_items
         = $self->run_hooks( generate_toc => { html_url => $html_url } );
-    my $toc = {};
+    my $toc           = {};
     my $new_toc_items = $self->numbering_toc_items($toc_items);
+    $toc->{booktitle} = $self->{url};
     $toc->{items} = $new_toc_items;
     $toc->{html}  = Digest::MD5::md5_hex($html_url) . ".html";
     my $toc_content = $self->render_template( 'toc', { toc => $toc } );
@@ -132,11 +133,11 @@ sub generate_toc {
 }
 
 sub numbering_toc_items {
-    my ($self, $toc_items) = @_;
+    my ( $self, $toc_items ) = @_;
     die 'toc_items is required' unless $toc_items;
-    my @new_toc_items =();
-    my $counter = 1;
-    foreach my $item (@{$toc_items||[]}) {
+    my @new_toc_items = ();
+    my $counter       = 1;
+    foreach my $item ( @{ $toc_items || [] } ) {
         $item->{num} = $counter;
         $counter++;
         push @new_toc_items, $item;
@@ -173,7 +174,7 @@ sub generate_opf {
     $book->{ncx}  = Digest::MD5::md5_hex( $self->{url} ) . ".ncx";
 
     my $opf_content = $self->render_template( 'opf', { book => $book } );
-    my $opf_file_path = $self->opf_file_path($html_url);
+    my $opf_file_path = $self->opf_file_path($self->{url});
     $self->write_file( $opf_content, $opf_file_path );
 
     $opf_file_path;
@@ -219,7 +220,7 @@ sub copy_mobi_to_kindle {
     my ( $self, $book_file_path ) = @_;
     if ( -d $self->{documents_dir} ) {
         print "Copying mobi to Kindle ...\n";
-        system("cp $book_file_path $self->{documents_dir}");
+        File::Copy::copy( $book_file_path, $self->{documents_dir} );
     }
 }
 
@@ -465,7 +466,7 @@ __DATA__
 
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <docTitle>
-    <text>BOOK</text>
+    <text><?= $toc->{booktitle} ?></text>
   </docTitle>
   <navMap>
 ? for my $item (@{$toc->{items}|| []}) {
