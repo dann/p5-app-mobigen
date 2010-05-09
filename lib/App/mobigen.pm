@@ -1,4 +1,4 @@
-package App::kindlegen;
+package App::mobigen;
 use LWP::Simple ();
 use Digest::MD5 qw(md5_hex);
 use HTML::TreeBuilder;
@@ -17,7 +17,7 @@ sub new {
     my $class = shift;
 
     bless {
-        home    => File::Spec->catfile( $ENV{HOME}, ".kindlegen" ),
+        home    => File::Spec->catfile( $ENV{HOME}, ".mobigen" ),
         verbose => undef,
         quiet   => undef,
         log     => undef,
@@ -27,7 +27,7 @@ sub new {
         hooks   => {},
         plugins => [],
         download_dir =>
-            File::Spec->catfile( $ENV{HOME}, ".kindlegen", "book" ),
+            File::Spec->catfile( $ENV{HOME}, ".mobigen", "book" ),
         documents_dir =>
             File::Spec->catfile( '/', 'Volumes', 'Kindle', 'documents' ),
         @_,
@@ -57,19 +57,19 @@ sub setup_home {
         = File::Spec->catfile( $self->{home}, "work", time . ".$$" );
     mkdir $self->{base}, 0777 or die "$self->{base}: $!";
 
-    $self->{log} = File::Spec->catfile( $self->{home}, "kindlegen.log" );
+    $self->{log} = File::Spec->catfile( $self->{home}, "mobigen.log" );
 
     {
         my $log  = $self->{log};
         my $base = $self->{base};
         $self->{at_exit} = sub {
             File::Copy::copy( $log,
-                File::Spec->catfile( $base, 'kindlegen.log' ) );
+                File::Spec->catfile( $base, 'mobigen.log' ) );
         };
     }
 
     open my $out, ">$self->{log}" or die "$self->{log}: $!";
-    print $out "kindlegen (App::kindlegen) $VERSION on perl $]\n";
+    print $out "mobigen (App::mobigen) $VERSION on perl $]\n";
     print $out "Work directory is $self->{base}\n";
 
     $self->{plugin_dir} = File::Spec->catfile( $self->{home}, "plugins" );
@@ -307,7 +307,7 @@ sub load_plugin {
     my $code = do { open my $io, "<$file"; local $/; <$io> };
 
     my @hooks;
-    eval "package App::kindlegen::plugin::$package;\n"
+    eval "package App::mobigen::plugin::$package;\n"
         . "use strict;\n$dsl\n" . "\n"
         . "sub hook { push \@hooks, [\@_] };\n$code";
 
@@ -370,7 +370,7 @@ sub log {
 sub parse_options {
     my $self = shift;
     $self->{url} = $ARGV[0];
-    die 'usage: kindlegen url' unless $self->{url};
+    die 'usage: mobigen url' unless $self->{url};
 }
 
 sub render_template {

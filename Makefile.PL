@@ -1,6 +1,6 @@
 use inc::Module::Install;
-name 'App-kindlegen';
-all_from 'lib/App/kindlegen.pm';
+name 'App-mobigen';
+all_from 'lib/App/mobigen.pm';
 
 requires(
     'LWP::Simple'           => 0,

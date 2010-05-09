@@ -2,9 +2,9 @@
 use strict;
 use warnings;
 use FindBin::Libs;
-use App::kindlegen;
+use App::mobigen;
 
-my $app = App::kindlegen->new;
+my $app = App::mobigen->new;
 $app->parse_options(@ARGV);
 $app->doit;
 
