@@ -21,7 +21,8 @@ hook generate_toc => 0, sub {
         my $toc_anchor = $item->as_string;
         if($toc_anchor =~ m/(#section-)(.*$)/) { 
             my $toc_item ={};
-            warn $2;
+            next if $toc_anchor =~ m/#section-Graph-syntax/;
+            next if $toc_anchor =~ m/#section-White-Space-Normalization-during-Validation/;
             $toc_item->{text} = $2;
             $toc_item->{anchor} = $1 . $2;
             push @toc, $toc_item;
