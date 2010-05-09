@@ -16,6 +16,8 @@ requires(
     'Text::MicroTemplate'   => 0,
 );
 
+install_script 'bin/mobigen';
+
 test_requires( 'Test::More' => 0, );
 use_test_base;
 auto_include;
